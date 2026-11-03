@@ -6,3 +6,10 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .DS_Store
+
+# PyInstaller 自动生成的构建描述文件
+*.spec
+
+# 网页版默认成品目录与临时工作目录
+unlocked/
+.musickey-work/
