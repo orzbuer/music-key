@@ -53,7 +53,7 @@ function statusText(item) {
   };
   if (item.status === "uploading") return "上传中";
   if (item.status === "queued") return "排队中";
-  if (item.status === "running") return phaseText[item.phase] || "处理中";
+  if (item.status === "running") return item.phase || "处理中";
   if (item.status === "done") return "完成";
   if (item.status === "failed") return "失败";
   if (item.status === "cancelled") return "已取消";
@@ -98,9 +98,17 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "meta";
     const sourceSize = item.file ? `${fmtSize(item.file.size)} · ${item.sourceExt}` : item.phase || "";
+    const elapsedText = (item.status === "queued" || item.status === "running") && item.elapsed
+      ? ` · 已等待 ${Math.floor(item.elapsed)}s`
+      : "";
+    const queueText = item.status === "queued" && item.queuePosition
+      ? `（第 ${item.queuePosition} 位）`
+      : "";
     const tagline = item.status === "done" && item.savedName
       ? `已保存 ${item.savedName}${item.size ? ` · ${fmtSize(item.size)}` : ""}`
-      : (item.outputName ? `输出 ${item.container.toUpperCase()} · ${fmtSize(item.size)}` : (item.error || item.phase || ""));
+      : (item.status === "queued" || item.status === "running")
+        ? `${item.phase || (item.status === "queued" ? "排队中" : "处理中")}${queueText}${elapsedText}`
+        : (item.outputName ? `输出 ${item.container.toUpperCase()} · ${fmtSize(item.size)}` : (item.error || item.phase || ""));
     meta.innerHTML = `<span>${sourceSize}</span><span class="dot">·</span><span class="tagline">${tagline || "等待上传"}</span>`;
     info.append(name, meta);
 
@@ -184,6 +192,9 @@ function addFiles(files) {
       coverUrl: null,
       outputName: null,
       savedName: null,
+      stage: "",
+      elapsed: 0,
+      queuePosition: null,
       container: "",
       size: 0,
       error: "",
@@ -273,6 +284,9 @@ function pollItem(item) {
       item.size = job.size || 0;
       item.outputName = job.output_name;
       item.savedName = job.saved_name || job.output_name;
+      item.stage = job.stage || "";
+      item.elapsed = job.elapsed != null ? job.elapsed : 0;
+      item.queuePosition = job.queue_position != null ? job.queue_position : null;
       item.error = job.error || "";
       if (job.tags && job.tags.title) item.name = job.tags.title;
       if (job.status === "done" && job.has_cover) {
@@ -319,7 +333,12 @@ async function health() {
     const response = await fetch("/api/health");
     const payload = await response.json();
     const pill = $("health");
-    pill.textContent = `本地服务 v${payload.version}${payload.ffmpeg ? "" : " · 无 ffmpeg"}`;
+    const workers = payload.workers || {};
+    const queue = payload.queue || {};
+    const workerText = workers.configured ? ` · worker ${workers.alive ?? "?"}/${workers.configured}` : "";
+    const queueText = queue.size ? ` · 排队 ${queue.size}` : "";
+    pill.textContent = `本地服务 v${payload.version}${payload.ffmpeg ? "" : " · 无 ffmpeg"}${workerText}${queueText}`;
+    if (payload.log_path) pill.title = `日志: ${payload.log_path}`;
     pill.classList.add("ok");
   } catch {
     $("health").textContent = "连接失败";
@@ -474,5 +493,6 @@ $("exitBtn").addEventListener("click", async () => {
 });
 
 health();
+setInterval(health, 5000);
 loadSettings();
 render();

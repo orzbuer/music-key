@@ -12,8 +12,11 @@ from Crypto.Util.Padding import unpad
 
 from ..ciphers import ncm_stream_bytes, xor_ncm_file
 from ..errors import FormatError
+from ..logging_setup import get_logger
 from ..model import KNOWN_CONTAINERS, DecodeResult, sniff_container
 from .base import DecodeOptions, Decoder
+
+logger = get_logger("musickey.formats.ncm")
 
 MAGIC = b"CTENFDAM"
 CORE_KEY = b"hzHRAmso5kInbaxW"
@@ -73,6 +76,16 @@ class NcmDecoder(Decoder):
             audio_offset = fp.tell()
 
             audio_total = path.stat().st_size - audio_offset
+            logger.info(
+                "NCM 解析: %s 总大小=%.2f MB 密钥=%d 元数据=%d 封面=%s 音频偏移=%d 音频=%.2f MB",
+                path.name,
+                path.stat().st_size / (1024 * 1024),
+                key_len,
+                len(meta_blob),
+                f"{len(cover) / (1024 * 1024):.2f} MB" if cover else "无",
+                audio_offset,
+                max(0, audio_total) / (1024 * 1024),
+            )
             fp.seek(audio_offset)
             box = ncm_stream_bytes(rc4_key)
             first = fp.read(64)

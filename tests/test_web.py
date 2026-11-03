@@ -26,6 +26,7 @@ def _manager(tmp_path, workers: int = 1) -> JobManager:
         workers=workers,
         output_dir=tmp_path / "out",
         config_path=tmp_path / "web.json",
+        log_path=tmp_path / "web.log",
     )
 
 
@@ -214,3 +215,157 @@ def test_startup_output_resolution(tmp_path, monkeypatch):
     assert resolve_startup_output(override, config_path=config) == override.resolve()
     assert resolve_startup_output(config_path=config) == saved.resolve()
     assert resolve_startup_output(config_path=tmp_path / "missing.json") == (tmp_path / "unlocked").resolve()
+
+
+def test_health_exposes_worker_and_queue_state(tmp_path):
+    manager = JobManager(
+        workers=2,
+        output_dir=tmp_path / "out",
+        config_path=tmp_path / "web.json",
+        log_path=tmp_path / "web.log",
+    )
+    manager.start()
+    try:
+        client = create_app(manager).test_client()
+        payload = client.get("/api/health").get_json()
+        assert payload["workers"]["configured"] == 2
+        assert payload["workers"]["alive"] == 2
+        assert payload["queue"]["size"] == 0
+        assert payload["output_ok"] is True
+        assert payload["log_path"].endswith("web.log")
+    finally:
+        manager.shutdown()
+
+
+def test_job_payload_has_timing_and_stage(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        client = create_app(manager).test_client()
+        response = client.post(
+            "/api/jobs",
+            data={"file": (io.BytesIO(build_ncm(PLAIN, b"0123456789abcdef")), "timing.ncm"), "embed_cover": "0"},
+            content_type="multipart/form-data",
+        )
+        job = _wait(client, response.get_json()["id"])
+        assert job["status"] == "done", job
+        assert job["stage"] == "done"
+        assert job["started_at"] is not None
+        assert job["finished_at"] is not None
+        assert job["queue_wait"] is not None
+        assert job["elapsed"] >= 0
+        assert job["worker"].startswith("musickey-worker-")
+    finally:
+        manager.shutdown()
+
+
+def test_watchdog_fails_stalled_running_job(tmp_path, monkeypatch):
+    import musickey.web as web
+
+    def hang(*args, **kwargs):
+        time.sleep(5)
+
+    monkeypatch.setattr(web, "process_one", hang)
+    from musickey.logging_setup import setup_logging
+
+    log_path = tmp_path / "web.log"
+    setup_logging(log_path)
+    manager = JobManager(
+        workers=1,
+        output_dir=tmp_path / "out",
+        config_path=tmp_path / "web.json",
+        log_path=log_path,
+        watchdog_interval=0.05,
+        stall_timeout=0.3,
+        queue_timeout=10,
+    )
+    try:
+        client = create_app(manager).test_client()
+        response = client.post(
+            "/api/jobs",
+            data={"file": (io.BytesIO(build_ncm(PLAIN, b"0123456789abcdef")), "stalled.ncm"), "embed_cover": "0"},
+            content_type="multipart/form-data",
+        )
+        job = _wait(client, response.get_json()["id"], timeout=8)
+        assert job["status"] == "failed", job
+        assert job["abandoned"] is True
+        assert "无进展" in job["error"]
+        assert log_path.is_file()
+        text = log_path.read_text(encoding="utf-8")
+        assert "看门狗放弃任务" in text
+        assert "线程堆栈" in text
+    finally:
+        manager.shutdown()
+
+
+def test_watchdog_fails_stuck_queued_job(tmp_path, monkeypatch):
+    import musickey.web as web
+
+    def hang(*args, **kwargs):
+        time.sleep(5)
+
+    monkeypatch.setattr(web, "process_one", hang)
+    from musickey.logging_setup import setup_logging
+
+    log_path = tmp_path / "web.log"
+    setup_logging(log_path)
+    manager = JobManager(
+        workers=1,
+        output_dir=tmp_path / "out",
+        config_path=tmp_path / "web.json",
+        log_path=log_path,
+        watchdog_interval=0.05,
+        stall_timeout=0.3,
+        queue_timeout=0.3,
+    )
+    manager.start()
+    monkeypatch.setattr(manager, "_spawn_worker", lambda: None)
+    try:
+        client = create_app(manager).test_client()
+        first = client.post(
+            "/api/jobs",
+            data={"file": (io.BytesIO(build_ncm(PLAIN, b"0123456789abcdef")), "first.ncm"), "embed_cover": "0"},
+            content_type="multipart/form-data",
+        )
+        second = client.post(
+            "/api/jobs",
+            data={"file": (io.BytesIO(build_ncm(PLAIN, b"0123456789abcdef")), "second.ncm"), "embed_cover": "0"},
+            content_type="multipart/form-data",
+        )
+        first_job = _wait(client, first.get_json()["id"], timeout=8)
+        second_job = _wait(client, second.get_json()["id"], timeout=8)
+        assert first_job["status"] == "failed", first_job
+        assert second_job["status"] == "failed", second_job
+        assert "worker" in second_job["error"] or "排队" in second_job["error"]
+        assert log_path.is_file()
+    finally:
+        manager.shutdown()
+
+
+def test_log_contains_stage_timings(tmp_path, monkeypatch):
+    log_path = tmp_path / "web.log"
+    monkeypatch.setenv("MUSICKEY_DEBUG", "")
+    from musickey.logging_setup import setup_logging
+
+    setup_logging(log_path)
+    manager = JobManager(
+        workers=1,
+        output_dir=tmp_path / "out",
+        config_path=tmp_path / "web.json",
+        log_path=log_path,
+    )
+    try:
+        client = create_app(manager).test_client()
+        response = client.post(
+            "/api/jobs",
+            data={"file": (io.BytesIO(build_ncm(PLAIN, b"0123456789abcdef")), "logged.ncm"), "embed_cover": "0"},
+            content_type="multipart/form-data",
+        )
+        job = _wait(client, response.get_json()["id"])
+        assert job["status"] == "done", job
+        text = log_path.read_text(encoding="utf-8")
+        assert "任务开始处理" in text
+        assert "解码完成" in text
+        assert "文件输出完成" in text
+        assert "任务结束" in text
+    finally:
+        manager.shutdown()

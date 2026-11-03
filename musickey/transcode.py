@@ -5,9 +5,13 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from .errors import MusicKeyError
+from .logging_setup import get_logger
+
+logger = get_logger("musickey.transcode")
 
 TARGETS = ("mp3", "flac", "m4a", "wav", "ogg")
 
@@ -86,10 +90,22 @@ def transcode(src: Path, dst: Path, target: str, ffmpeg: str | None = None, time
         *args,
         str(dst),
     ]
+    logger.info("ffmpeg 开始: %s -> %s (%s)", src.name, target, binary)
+    started = time.perf_counter()
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
+        logger.error("ffmpeg 转码超时: %s（%ss）", src.name, timeout)
         raise MusicKeyError("ffmpeg 转码超时") from exc
+    elapsed = time.perf_counter() - started
     if proc.returncode != 0 or not dst.exists():
         detail = proc.stderr.strip()[:300]
+        logger.error(
+            "ffmpeg 转码失败: %s rc=%s 用时=%.2fs stderr=%s",
+            src.name,
+            proc.returncode,
+            elapsed,
+            detail,
+        )
         raise MusicKeyError(f"ffmpeg 转码失败: {detail or '未知错误'}")
+    logger.info("ffmpeg 完成: %s -> %s 用时=%.2fs", src.name, target, elapsed)
