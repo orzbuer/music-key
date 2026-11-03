@@ -103,6 +103,11 @@ body {
   border-radius: 10px; padding: 7px 11px; font-size: 13px; outline: none; transition: border-color .15s;
 }
 .settings select:focus, .settings input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 92, 255, .15); }
+.settings .output-dir {
+  flex: 1 1 100%; display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%;
+}
+.settings .output-dir span { flex: none; }
+.settings .output-dir input { flex: 1; min-width: 0; width: 100%; }
 .settings .ekey { flex: 1 1 190px; min-width: 190px; }
 .settings .ekey input { width: 100%; }
 .settings i { color: var(--dim); font-style: normal; opacity: .6; font-size: 10px; }
@@ -209,7 +214,8 @@ button.danger:hover { color: var(--err); border-color: rgba(251, 90, 90, .4); }
   .card::before { align-self: stretch; }
   .end { width: 100%; justify-content: space-between; }
   .settings { align-items: flex-start; flex-direction: column; }
-  .settings label { width: 100%; }
+  .settings label, .settings .output-dir { width: 100%; }
+  .settings .output-dir { flex-wrap: wrap; }
   .settings .ekey { width: 100%; flex: none; min-width: 0; }
   .secure { margin-left: 0; }
 }

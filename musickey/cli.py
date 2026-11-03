@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import threading
 from pathlib import Path
@@ -15,7 +14,7 @@ from .formats import supported_summary
 from .formats.base import DecodeOptions
 from .formats.qmc import list_ekeys
 from .transcode import TARGETS, resolve_ffmpeg
-from .web import run as run_web
+from .web import open_folder, run as run_web
 
 BANNER = """音钥 MusicKey —— 全平台加密音乐格式转换工具
 支持: 网易云 .ncm | QQ音乐 .mflac/.mgg/.qmc*/.tkm | 酷狗 .kgm/.kgma/.vpr | 酷我 .kwm
@@ -50,19 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-q", "--quiet", action="store_true", help="只输出错误和汇总")
     parser.add_argument("--version", action="version", version=f"MusicKey {__version__}")
     return parser
-
-
-def _open_folder(folder: Path) -> None:
-    folder.mkdir(parents=True, exist_ok=True)
-    try:
-        if sys.platform == "win32":
-            os.startfile(str(folder))  # type: ignore[attr-defined]
-        elif sys.platform == "darwin":
-            os.system(f'open "{folder}"')
-        else:
-            os.system(f'xdg-open "{folder}"')
-    except Exception:
-        pass
 
 
 def _run_batch(args: argparse.Namespace) -> int:
@@ -162,7 +148,7 @@ def _run_batch(args: argparse.Namespace) -> int:
             f"失败 {counts['failed']}，取消 {counts['cancelled']}"
         )
     if args.open and opts.output_dir.exists():
-        _open_folder(opts.output_dir)
+        open_folder(opts.output_dir)
     return 0 if counts["failed"] == 0 else 1
 
 
@@ -181,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--host", default="127.0.0.1")
         parser.add_argument("--port", type=int, default=8690)
         parser.add_argument("--workers", type=int, default=2)
+        parser.add_argument("--output", type=Path, default=None, help="成品目录（默认 ./unlocked，或上次在网页中保存的路径）")
         parser.add_argument("--open", action="store_true", help="自动打开浏览器")
         parser.add_argument("--version", action="version", version=f"MusicKey {__version__}")
         args = parser.parse_args(argv[1:])
@@ -189,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.open:
             threading.Timer(0.8, lambda: webbrowser.open(f"http://{args.host}:{args.port}")).start()
-        run_web(args.host, args.port, args.workers)
+        run_web(args.host, args.port, args.workers, output_dir=args.output)
         return 0
     parser = build_parser()
     args = parser.parse_args(argv)

@@ -37,16 +37,28 @@
         </svg>
       </div>
       <h2>把加密音乐<em>拖进来</em></h2>
-      <p>单个文件、整个文件夹都可以 · 自动识别格式 · 可批量打包下载</p>
+      <p>单个文件、整个文件夹都可以 · 自动识别格式 · 处理完即写入成品目录</p>
       <div class="chips">
         <span>.ncm</span><span>.mflac</span><span>.mgg</span><span>.qmc*</span>
         <span>.tkm</span><span>.kgm</span><span>.kgma</span><span>.vpr</span><span>.kwm</span>
       </div>
       <button class="primary big" id="pickBtn">选择文件</button>
-      <input type="file" id="picker" multiple hidden accept=".ncm,.mflac,.mgg,.mflac0,.mgg0,.mgg1,.mggl,.mmp4,.qmcflac,.qmcogg,.qmc0,.qmc2,.qmc3,.qmc4,.qmc6,.qmc8,.tkm,.bkcmp3,.bkcm4a,.bkcflac,.bkcwav,.bkcape,.bkcogg,.bkcwma,.666c6163,.6d7033,.6f6767,.6d3461,.776176,.kgm,.kgma,.vpr,.kwm,.kgm.flac,.vpr.flac">
+      <input type="file" id="picker" multiple hidden accept=".ncm,.mflac,.mgg,.mflac0,.mgg0,.mgg1,.mggl,.mmp4,.qmcflac,.qmcogg,.qmc0,.qmc2,.qmc3,.qmc4,.qmc6,.qmc8,.tkm,.bkcmp3,.bkcm4a,.bkcflac,.bkcwav,.bkcape,.bkcogg,.bkcwma,.666c6163,.6d7033,.6f6767,.6d3461,.776176,.kgm,.kgma,.vpr,.kwm,.kgm.flac,.vpr.flac,.lrc,.krc,.qrc">
     </section>
 
     <section class="settings">
+      <div class="output-dir">
+        <span>成品目录</span>
+        <input type="text" id="outputDir" spellcheck="false" placeholder="处理完的文件会直接写到这里">
+        <button type="button" class="ghost" id="saveDirBtn">保存</button>
+        <button type="button" class="ghost" id="browseDirBtn">浏览</button>
+      </div>
+      <div class="output-dir">
+        <span>歌词目录</span>
+        <input type="text" id="lyricDir" spellcheck="false" placeholder="与歌曲同名的 .lrc 会从这里复制到成品目录">
+        <button type="button" class="ghost" id="saveLyricBtn">保存</button>
+        <button type="button" class="ghost" id="browseLyricBtn">浏览</button>
+      </div>
       <label>
         <span>输出格式</span>
         <select id="format">
@@ -78,14 +90,14 @@
       <div class="toolbar">
         <input id="filter" type="search" placeholder="筛选文件名…">
         <button class="ghost" id="clearBtn">清空完成</button>
-        <button class="primary" id="zipBtn" disabled>打包下载全部</button>
+        <button class="primary" id="revealBtn" type="button">打开成品目录</button>
       </div>
     </section>
 
     <section id="list" class="list" aria-live="polite"></section>
     <section id="empty" class="empty">
       <div class="empty-icon">♪</div>
-      <p>还没有文件。拖入加密音乐，几秒钟后下载标准格式。</p>
+      <p>还没有文件。拖入加密音乐，处理完会直接出现在成品目录里。</p>
     </section>
 
     <section class="foot">

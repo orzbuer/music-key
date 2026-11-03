@@ -98,7 +98,9 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "meta";
     const sourceSize = item.file ? `${fmtSize(item.file.size)} · ${item.sourceExt}` : item.phase || "";
-    const tagline = item.outputName ? `输出 ${item.container.toUpperCase()} · ${fmtSize(item.size)}` : (item.error || item.phase || "");
+    const tagline = item.status === "done" && item.savedName
+      ? `已保存 ${item.savedName}${item.size ? ` · ${fmtSize(item.size)}` : ""}`
+      : (item.outputName ? `输出 ${item.container.toUpperCase()} · ${fmtSize(item.size)}` : (item.error || item.phase || ""));
     meta.innerHTML = `<span>${sourceSize}</span><span class="dot">·</span><span class="tagline">${tagline || "等待上传"}</span>`;
     info.append(name, meta);
 
@@ -126,12 +128,15 @@ function render() {
     const actions = document.createElement("div");
     actions.className = "actions";
     if (item.status === "done" && item.id) {
-      const play = document.createElement("a");
-      play.className = "icon-btn";
-      play.href = `/api/audio/${item.id}`;
-      play.target = "_blank";
-      play.innerHTML = iconSvg("play");
-      actions.appendChild(play);
+      const playable = ["mp3", "flac", "m4a", "ogg", "wav"].includes((item.container || "").toLowerCase());
+      if (playable) {
+        const play = document.createElement("a");
+        play.className = "icon-btn";
+        play.href = `/api/audio/${item.id}`;
+        play.target = "_blank";
+        play.innerHTML = iconSvg("play");
+        actions.appendChild(play);
+      }
       const download = document.createElement("a");
       download.className = "icon-btn primary";
       download.href = `/api/download/${item.id}`;
@@ -158,7 +163,6 @@ function render() {
     `<span>处理中 <b style="color:var(--accent-2)">${running}</b></span>` +
     `<span>完成 <b style="color:var(--ok)">${done}</b></span>` +
     `<span>失败 <b style="color:var(--err)">${failed}</b></span>`;
-  $("zipBtn").disabled = done === 0;
 }
 
 function addFiles(files) {
@@ -179,6 +183,7 @@ function addFiles(files) {
       id: null,
       coverUrl: null,
       outputName: null,
+      savedName: null,
       container: "",
       size: 0,
       error: "",
@@ -267,6 +272,7 @@ function pollItem(item) {
       item.container = job.container || item.container;
       item.size = job.size || 0;
       item.outputName = job.output_name;
+      item.savedName = job.saved_name || job.output_name;
       item.error = job.error || "";
       if (job.tags && job.tags.title) item.name = job.tags.title;
       if (job.status === "done" && job.has_cover) {
@@ -354,9 +360,105 @@ $("filter").addEventListener("input", (event) => {
   state.filter = event.target.value;
   render();
 });
-$("zipBtn").addEventListener("click", () => {
-  const ids = [...state.items.values()].filter((item) => item.status === "done" && item.id).map((item) => item.id);
-  if (ids.length) window.location = `/api/zip?ids=${ids.join(",")}`;
+async function saveOutputDir() {
+  const outputDir = $("outputDir").value.trim();
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ output_dir: outputDir }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!payload.ok) {
+    toast(payload.error || "保存失败");
+    return false;
+  }
+  $("outputDir").value = payload.output_dir;
+  toast("成品目录已保存");
+  return true;
+}
+
+async function loadSettings() {
+  try {
+    const response = await fetch("/api/settings");
+    const payload = await response.json();
+    if (payload.ok) {
+      $("outputDir").value = payload.output_dir;
+      $("lyricDir").value = payload.lyric_dir || "";
+    }
+  } catch {
+    toast("无法读取成品目录");
+  }
+}
+
+$("saveDirBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  saveOutputDir();
+});
+$("outputDir").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveOutputDir();
+  }
+});
+async function saveLyricDir() {
+  const lyricDir = $("lyricDir").value.trim();
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lyric_dir: lyricDir }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!payload.ok) {
+    toast(payload.error || "保存失败");
+    return false;
+  }
+  $("lyricDir").value = payload.lyric_dir || "";
+  toast(lyricDir ? "歌词目录已保存" : "已清除歌词目录");
+  return true;
+}
+
+$("saveLyricBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  saveLyricDir();
+});
+$("lyricDir").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveLyricDir();
+  }
+});
+$("browseLyricBtn").addEventListener("click", async (event) => {
+  event.stopPropagation();
+  toast("请在弹出的窗口里选择歌词所在文件夹");
+  const response = await fetch("/api/browse-folder", { method: "POST" });
+  const payload = await response.json().catch(() => ({}));
+  if (!payload.ok) {
+    if (payload.error && payload.error !== "已取消") toast(payload.error);
+    return;
+  }
+  $("lyricDir").value = payload.output_dir;
+  await saveLyricDir();
+});
+$("browseDirBtn").addEventListener("click", async (event) => {
+  event.stopPropagation();
+  toast("请在弹出的窗口里选择文件夹");
+  const response = await fetch("/api/browse-folder", { method: "POST" });
+  const payload = await response.json().catch(() => ({}));
+  if (!payload.ok) {
+    if (payload.error && payload.error !== "已取消") toast(payload.error);
+    return;
+  }
+  $("outputDir").value = payload.output_dir;
+  await saveOutputDir();
+});
+$("revealBtn").addEventListener("click", async () => {
+  const response = await fetch("/api/reveal", { method: "POST" });
+  const payload = await response.json().catch(() => ({}));
+  if (!payload.ok) {
+    toast(payload.error || "无法打开目录");
+    return;
+  }
+  toast(payload.output_dir ? `已打开 ${payload.output_dir}` : "已打开成品目录");
 });
 $("clearBtn").addEventListener("click", async () => {
   await fetch("/api/clear", { method: "POST" }).catch(() => {});
@@ -372,4 +474,5 @@ $("exitBtn").addEventListener("click", async () => {
 });
 
 health();
+loadSettings();
 render();
